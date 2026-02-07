@@ -13,7 +13,9 @@ let width = 1920
 let height = 1080
 let totalFrames = 0
 let receivedFrames = 0
-let previousFramePath: string | null = null
+
+/** Track all written frame paths so we can clean them up after encoding */
+const writtenFramePaths: string[] = []
 
 const postMsg = (msg: WorkerOutMessage) => ctx.postMessage(msg)
 
@@ -101,6 +103,18 @@ const getExtension = (): string => {
   }
 }
 
+/** Delete all frame files from the virtual FS */
+const cleanupFrames = async () => {
+  for (const path of writtenFramePaths) {
+    try {
+      await ffmpeg.deleteFile(path)
+    } catch {
+      // Ignore
+    }
+  }
+  writtenFramePaths.length = 0
+}
+
 ctx.onmessage = async (event: MessageEvent<WorkerInMessage>) => {
   const msg = event.data
 
@@ -112,7 +126,7 @@ ctx.onmessage = async (event: MessageEvent<WorkerInMessage>) => {
       height = msg.height
       totalFrames = msg.totalFrames
       receivedFrames = 0
-      previousFramePath = null
+      writtenFramePaths.length = 0
 
       await loadFFmpeg()
       postMsg({ type: 'ready' })
@@ -126,20 +140,13 @@ ctx.onmessage = async (event: MessageEvent<WorkerInMessage>) => {
       }
 
       try {
-        const framePath = `frame_${String(msg.index).padStart(5, '0')}.png`
+        // Use receivedFrames as the contiguous index (not msg.index)
+        // to guarantee no gaps in the %05d sequence
+        const framePath = `frame_${String(receivedFrames).padStart(5, '0')}.png`
         const data = new Uint8Array(msg.data)
 
         await ffmpeg.writeFile(framePath, data)
-
-        // Delete previous frame to bound memory
-        if (previousFramePath) {
-          try {
-            await ffmpeg.deleteFile(previousFramePath)
-          } catch {
-            // May not exist
-          }
-        }
-        previousFramePath = framePath
+        writtenFramePaths.push(framePath)
         receivedFrames++
 
         postMsg({
@@ -160,6 +167,11 @@ ctx.onmessage = async (event: MessageEvent<WorkerInMessage>) => {
         return
       }
 
+      if (receivedFrames === 0) {
+        postMsg({ type: 'error', message: 'No frames received to encode' })
+        return
+      }
+
       try {
         postMsg({
           type: 'progress',
@@ -176,7 +188,6 @@ ctx.onmessage = async (event: MessageEvent<WorkerInMessage>) => {
 
         let buffer: ArrayBuffer
         if (outputData instanceof Uint8Array) {
-          // Create a new ArrayBuffer copy to ensure it's transferable
           const copy = new Uint8Array(outputData.byteLength)
           copy.set(outputData)
           buffer = copy.buffer as ArrayBuffer
@@ -191,19 +202,23 @@ ctx.onmessage = async (event: MessageEvent<WorkerInMessage>) => {
           extension: getExtension(),
         })
 
-        // Cleanup
+        // Cleanup all frame files and output after encoding
+        await cleanupFrames()
         try {
           await ffmpeg.deleteFile(outputFile)
         } catch {
           // Ignore
         }
       } catch (err) {
+        // Cleanup on error too
+        await cleanupFrames()
         postMsg({ type: 'error', message: `Encoding failed: ${err}` })
       }
       break
     }
 
     case 'cancel': {
+      await cleanupFrames()
       break
     }
   }

@@ -135,7 +135,8 @@ export interface RenderAllFramesOptions {
 }
 
 /** Render all frames sequentially, calling onFrame for each.
- *  Snapshots and restores shape state before/after. */
+ *  Snapshots and restores shape state before/after.
+ *  Uses a contiguous outputIndex so the worker receives gap-free frame numbers. */
 export const renderAllFrames = async ({
   editor,
   tracks,
@@ -145,16 +146,30 @@ export const renderAllFrames = async ({
   shouldCancel,
 }: RenderAllFramesOptions): Promise<void> => {
   const restore = snapshotTrackedShapes(editor, tracks)
+  let outputIndex = 0
 
   try {
-    for (let frame = 0; frame <= settings.durationFrames; frame++) {
+    const totalFrames = settings.durationFrames
+    for (let frame = 0; frame <= totalFrames; frame++) {
       if (shouldCancel?.()) break
 
       const blob = await renderFrame({ editor, tracks, settings, frame })
-      if (!blob) continue
+      if (!blob) {
+        // Render a blank 1x1 PNG as a fallback to avoid gaps in the sequence
+        const canvas = new OffscreenCanvas(settings.width, settings.height)
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.fillStyle = '#000000'
+          ctx.fillRect(0, 0, settings.width, settings.height)
+        }
+        const fallback = await canvas.convertToBlob({ type: 'image/png' })
+        await onFrame(outputIndex, fallback)
+      } else {
+        await onFrame(outputIndex, blob)
+      }
 
-      await onFrame(frame, blob)
-      onProgress?.(frame, settings.durationFrames)
+      outputIndex++
+      onProgress?.(frame, totalFrames)
     }
   } finally {
     // Always restore shapes to authored state

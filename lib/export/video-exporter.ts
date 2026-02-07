@@ -31,7 +31,8 @@ export const exportVideo = async ({
     height,
   }
 
-  const totalFrames = settings.durationFrames
+  // Total frame count is durationFrames + 1 (frame 0 through durationFrames inclusive)
+  const totalFrames = settings.durationFrames + 1
 
   // Try to use Web Worker for encoding
   let worker: Worker | null = null
