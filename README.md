@@ -2,6 +2,10 @@
 
 Vector animation tool for technical explainer videos — draw with a canvas editor, animate with a timeline, and export video **entirely in the browser**.
 
+## Screenshot
+
+![ExplainMotion editor screenshot](./Screenshot%202026-02-07%20060602.png)
+
 ## Features
 
 - **Local-first projects**: projects are stored in the browser via **IndexedDB** (no backend required).
