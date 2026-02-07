@@ -52,14 +52,6 @@ pnpm start   # start production server
 pnpm lint    # run eslint
 ```
 
-## Export notes (ffmpeg.wasm)
-
-- **Cross-origin isolation**: ffmpeg.wasm requires `SharedArrayBuffer`, which requires `COOP/COEP` headers.
-  - This repo already sets them in `next.config.ts`.
-- **First export downloads ffmpeg core**: the worker loads ffmpeg core from `unpkg.com` at runtime, so exports require network access and may take a bit on first run.
-- **MP4 availability**: H.264 support may not be available depending on the ffmpeg build; WebM and GIF are expected to work.
-- **Performance**: long durations and/or 4K exports can be slow or fail depending on device/browser resources.
-
 ## Data & storage
 
 - **Projects are stored locally** in the browser (IndexedDB).
